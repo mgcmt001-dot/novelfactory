@@ -92,8 +92,7 @@ if tool.startswith("1"):
             ["玄幻", "都市", "校园", "仙侠", "科幻", "灵异", "历史", "女频·古言", "女频·现言", "男频·热血"]
         )
 
-        # 修正了这里的缩进问题
-        shuang_dian = st.multiselect(
+        shuangdian_tags = st.multiselect(
             "爽点（多选）",
             ["重生", "穿越", "虐渣", "复仇", "打脸", "金手指", "马甲大佬", "升级流", "无限流", "权谋", "甜宠"]
         )
@@ -125,7 +124,7 @@ if tool.startswith("1"):
                     请为一部网络小说生成【完整大纲】，要求：
 
                     【类型】{novel_type}
-                    【核心爽点】{', '.join(shuang_dian) if shuang_dian else '自由搭配'}
+                    【核心爽点】{', '.join(shuangdian_tags) if shuangdian_tags else '自由搭配'}
                     【主角设定】{protagonist}
                     【世界观设定】{world_setting}
                     【目标总章节数】约 {target_chapters} 章（允许略有浮动，比如 ±5 章，但必须有明确的起点和终点）
@@ -148,7 +147,7 @@ if tool.startswith("1"):
                     if outline_full:
                         st.session_state.outline_raw = outline_full
 
-                        # 再让 AI 从大纲中抽取“纯章节目录 + 每章一句话简介”，便于后续按章引用
+                        # 抽取章节目录
                         extract_prompt = f"""
                         以下是一份完整大纲，请你只抽取【章节目录部分】：
 
@@ -161,11 +160,15 @@ if tool.startswith("1"):
                         （从第一章到最后一章，全部列出）
                         """
 
-                        chapter_list = ask_ai("你是一个编辑助理，负责整理章节目录。", extract_prompt, temperature=0.3)
+                        chapter_list = ask_ai(
+                            "你是一个编辑助理，负责整理章节目录。",
+                            extract_prompt,
+                            temperature=0.3
+                        )
                         if chapter_list:
                             st.session_state.outline_chapter_list = chapter_list
 
-                        # 再让 AI 把“每一章的一句话简介”拆成键值对，方便写正文时引用
+                        # 把目录转成「第x章：简介」结构，便于按章引用
                         detail_prompt = f"""
                         请把下面的章节目录，整理成【每一章的简要大纲】字典。
 
@@ -177,8 +180,11 @@ if tool.startswith("1"):
                         ...
                         请完整列出所有章节。
                         """
-                        chapter_plans_text = ask_ai("你是编辑助理，负责生成每一章简要大纲。", detail_prompt, temperature=0.5)
-                        # 简单解析成 dict
+                        chapter_plans_text = ask_ai(
+                            "你是编辑助理，负责生成每一章简要大纲。",
+                            detail_prompt,
+                            temperature=0.5
+                        )
                         plans = {}
                         if chapter_plans_text:
                             for line in chapter_plans_text.splitlines():
@@ -241,7 +247,6 @@ elif tool.startswith("2"):
 
         chapter_title = st.text_input("本章标题（可空）", placeholder="例：第1章 重新睁眼的那一天")
 
-        # 如果之前解析过每一章简要大纲，则自动带入
         auto_plan = st.session_state.chapter_plans.get(chap_num, "")
         chapter_plan = st.text_area(
             "本章大纲（可来自总纲解析，也可自己改写）",
@@ -259,13 +264,12 @@ elif tool.startswith("2"):
             ["1200字左右", "2000字左右", "3000字左右"]
         )
 
-        # 初始化当前章节内容 / 亮点
         if chap_num not in st.session_state.chapter_texts:
             st.session_state.chapter_texts[chap_num] = ""
         if chap_num not in st.session_state.chapter_highlights:
             st.session_state.chapter_highlights[chap_num] = ""
 
-        # ---- 按钮：结构化写一章（覆盖重写） ----
+        # 生成 / 重写本章
         if st.button("✍️ 结构化生成 / 重写本章（覆盖当前内容）", use_container_width=True):
             if not chapter_plan.strip():
                 st.warning("请先写一点【本章大纲】（哪怕2句话也行）。")
@@ -278,7 +282,7 @@ elif tool.startswith("2"):
                     {chapter_plan}
 
                     【章节信息】：
-                    - 章节编号：第 {chap_num} 章（中短篇长篇均可，自由把握节奏）
+                    - 章节编号：第 {chap_num} 章
                     - 章节标题：{chapter_title or '可根据内容自行拟一个合适标题'}
                     - 本章风格倾向：{style}
                     - 单次写作目标：{word_target}（允许略多）
@@ -296,7 +300,6 @@ elif tool.startswith("2"):
 
                     raw_chapter = ask_ai("你是一名职业网文作者，擅长长篇连载。", base_prompt, temperature=1.1)
 
-                    # 单独再要一份“本章亮点摘要”（不放进正文，只放在单独框里）
                     highlight_prompt = f"""
                     以下是一章正文，请你用编辑的视角，总结出这一章的看点和亮点（不超过 5 条）：
 
@@ -312,7 +315,7 @@ elif tool.startswith("2"):
                         st.success("本章正文已生成，亮点摘要已单独提取。")
                         st.session_state.last_checked_chapter = chap_num
 
-        # ---- 按钮：续写（在已有正文后面追加） ----
+        # 续写本章
         if st.button("➕ 续写本章（在当前末尾继续写）", use_container_width=True):
             existing = st.session_state.chapter_texts.get(chap_num, "")
             if not existing.strip():
@@ -349,7 +352,6 @@ elif tool.startswith("2"):
     with col_right:
         st.subheader("输出区")
 
-        # 正文编辑（可改，自动同步）
         curr_text = st.session_state.chapter_texts.get(chap_num, "")
         new_text = st.text_area(
             f"第 {chap_num} 章 正文（只包含正文，不含亮点）",
@@ -359,7 +361,6 @@ elif tool.startswith("2"):
         if new_text != curr_text:
             st.session_state.chapter_texts[chap_num] = new_text
 
-        # 本章亮点单独显示
         st.markdown("**本章亮点 / 看点摘要（不参与正文导出）**")
         hl = st.session_state.chapter_highlights.get(chap_num, "")
         st.text_area("自动提炼的亮点（你也可以手动覆写）", height=120, value=hl)
@@ -471,7 +472,11 @@ elif tool.startswith("3"):
                     输出：
                     - 只输出【修改后的正文】，不要重复报告。
                     """
-                    fixed = ask_ai("你是一名根据编辑意见修稿的职业作者。", fix_prompt, temperature=1.0)
+                    fixed = ask_ai(
+                        "你是一名根据编辑意见修稿的职业作者。",
+                        fix_prompt,
+                        temperature=1.0
+                    )
 
                     if report:
                         st.session_state.logic_report = report
