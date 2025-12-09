@@ -569,4 +569,46 @@ elif tool.startswith("3"):
                     if fixed:
                         st.session_state.logic_fixed_text = fixed
 
-                    st.session_state.last_checked_chapter =
+                    st.session_state.last_checked_chapter = chap_num
+                    st.success("审稿完成，右侧显示审稿报告与修改稿对比。")
+
+    with col_right:
+        st.subheader("输出区：审稿报告 & 正文对比")
+
+        if st.session_state.logic_report:
+            with st.expander("📋 专业审稿报告（建议认真读一遍）", expanded=True):
+                st.markdown(st.session_state.logic_report)
+
+        if st.session_state.logic_fixed_text:
+            st.markdown("---")
+            st.subheader("📝 文本对比（左：原文 / 右：修改稿）")
+
+            col_o, col_f = st.columns(2)
+            with col_o:
+                st.text_area(
+                    "原始正文（未改动）",
+                    value=original_text,
+                    height=300
+                )
+            with col_f:
+                st.text_area(
+                    "修改稿正文（基于审稿意见优化）",
+                    value=st.session_state.logic_fixed_text,
+                    height=300
+                )
+
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("✅ 接受修改稿并覆盖原文", use_container_width=True):
+                    st.session_state.chapter_texts[chap_num] = st.session_state.logic_fixed_text
+                    st.success("已用修改稿覆盖原文，可回到【章节生成器】继续续写后续内容。")
+            with col_btn2:
+                st.download_button(
+                    "💾 下载修改稿正文 TXT",
+                    data=st.session_state.logic_fixed_text,
+                    file_name=f"chapter_{chap_num}_revised.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+        else:
+            st.info("👈 先在左侧点击【开始专业逻辑审稿与文风诊断】。")
