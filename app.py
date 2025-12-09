@@ -3,22 +3,22 @@ from openai import OpenAI
 
 # =============== Streamlit 基础配置 ===============
 st.set_page_config(
-    page_title="DeepNovel 工业版",
+    page_title="DeepNovel 创世版",
     layout="wide",
-    page_icon="📚"
+    page_icon="⚡"
 )
 
 # =============== Session State 初始化 ===============
 if "outline_raw" not in st.session_state:
-    st.session_state.outline_raw = ""          # 原始大纲文本（含说明）
+    st.session_state.outline_raw = ""
 if "outline_chapter_list" not in st.session_state:
-    st.session_state.outline_chapter_list = "" # 仅章节目录部分，供参考
+    st.session_state.outline_chapter_list = ""
 if "chapter_plans" not in st.session_state:
-    st.session_state.chapter_plans = {}        # 每一章的简要大纲 {int: str}
+    st.session_state.chapter_plans = {}
 if "chapter_texts" not in st.session_state:
-    st.session_state.chapter_texts = {}        # 每一章正文 {int: str}
+    st.session_state.chapter_texts = {}
 if "chapter_highlights" not in st.session_state:
-    st.session_state.chapter_highlights = {}   # 每一章亮点/伏笔 {int: str}
+    st.session_state.chapter_highlights = {}
 if "last_checked_chapter" not in st.session_state:
     st.session_state.last_checked_chapter = 1
 if "logic_report" not in st.session_state:
@@ -26,34 +26,32 @@ if "logic_report" not in st.session_state:
 if "logic_fixed_text" not in st.session_state:
     st.session_state.logic_fixed_text = ""
 
-# =============== 侧边栏：API & 说明 ===============
+# =============== 侧边栏：API & 核心引擎 ===============
 with st.sidebar:
-    st.title("⚙️ 引擎设置")
+    st.title("⚡ 创世引擎")
     api_key = st.text_input("SiliconFlow API Key", type="password")
     if not api_key:
-        st.warning("请输入 API Key 才能生成内容")
+        st.warning("请输入 Key")
         st.stop()
     client = OpenAI(api_key=api_key, base_url="https://api.siliconflow.cn/v1")
 
     st.markdown("---")
-    st.info(
-        "推荐流程：\n"
-        "1. 用【大纲架构师】生成完整章数大纲\n"
-        "2. 在【章节生成器】按章写正文，可多次续写\n"
-        "3. 用【逻辑质检员】做专业审稿和文本对比\n"
-    )
+    st.info("🔥 **当前模式：高级文学增强**\n已启用潜台词分析、冲突分层、去形容词化指令。")
 
-# =============== 通用 AI 调用 + 去AI化规范 ===============
-def ask_ai(system_role: str, user_prompt: str, temperature: float = 1.0, model: str = "deepseek-ai/DeepSeek-V3"):
-    anti_ai_rules = """
-    【去AI化 & 专业网文写作规范】（必须遵守）：
-    1. 禁止使用“综上所述、总而言之、在这个世界上、随着时间的推移”等套话。
-    2. 禁止写“作者在这里想表达的是……”之类的解释性句子。
-    3. 不要写“这一章主要讲了……”之类的章节总结。
-    4. 用具体场景、对话、行为来表现情绪，少用“他很生气、她很悲伤”这种直接说明。
-    5. 对话符合人物身份，避免流水账式对白。
+# =============== 核心：God-tier AI 调用函数 ===============
+def ask_ai(system_role: str, user_prompt: str, temperature: float = 1.1, model: str = "deepseek-ai/DeepSeek-V3"):
+    # 这里的 Prompt 是这一版的核心，哪怕多一个标点都是为了提升质感
+    god_mode_rules = """
+    【最高级文学创作指令 - 必须严格执行】：
+    1. **拒绝平庸的冲突**：不要写“两人吵架”，要写“价值观的死磕”。反派的逻辑必须自洽且迷人，甚至比主角更合理。
+    2. **冰山理论**：人物说出口的话只能占 10%，剩下的 90% 是潜台词、谎言和试探。严禁把心里想的直接写出来。
+    3. **去形容词化**：严禁使用“愤怒、悲伤、恐惧”这种廉价词汇。用生理反应（手抖、瞳孔收缩）、环境隐喻（窗外的暴雨、断掉的铅笔）来表现。
+    4. **画面感（Show, Don't Tell）**：你不是在写小说，你是在运镜。请用特写镜头描写细节（灰尘、血丝、微表情）。
+    5. **节奏致死**：段落之间要有留白，高潮时要用短句，压抑时要用长难句。
+    6. **禁止上帝视角**：只能描写当前视角人物【看得到、听得到、感觉得到】的东西。
     """
-    system_full = system_role + "\n" + anti_ai_rules
+    
+    system_full = system_role + "\n" + god_mode_rules
     try:
         resp = client.chat.completions.create(
             model=model,
@@ -61,7 +59,7 @@ def ask_ai(system_role: str, user_prompt: str, temperature: float = 1.0, model: 
                 {"role": "system", "content": system_full},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=temperature,
+            temperature=temperature, # 提高随机性以获得更惊艳的词藻
         )
         return resp.choices[0].message.content
     except Exception as e:
@@ -70,459 +68,201 @@ def ask_ai(system_role: str, user_prompt: str, temperature: float = 1.0, model: 
 
 # =============== 顶部导航 ===============
 tool = st.radio(
-    "选择工序 / Tool",
-    ["1. 大纲架构师", "2. 章节生成器", "3. 逻辑质检员"],
+    "选择工序",
+    ["1. 命运架构师 (大纲)", "2. 沉浸式剧作 (正文)", "3. 残酷审判官 (质检)"],
     horizontal=True
 )
 st.markdown("---")
 
 # ======================================================
-# 1. 大纲架构师 —— 明确章数 & 全部章节目录
+# 1. 命运架构师 —— 设定如果不高级，正文一定烂
 # ======================================================
 if tool.startswith("1"):
-    st.header("1️⃣ 大纲架构师：生成完整全书大纲（含所有章节）")
+    st.header("1️⃣ 命运架构师：构建充满悖论与宿命感的世界")
 
     col_left, col_right = st.columns([1, 1])
 
     with col_left:
-        st.subheader("输入区")
-
-        novel_type = st.selectbox(
-            "小说类型",
-            ["玄幻", "都市", "校园", "仙侠", "科幻", "灵异", "历史", "女频·古言", "女频·现言", "男频·热血"]
-        )
-
-        shuangdian_tags = st.multiselect(
-            "爽点（多选）",
-            ["重生", "穿越", "虐渣", "复仇", "打脸", "金手指", "马甲大佬", "升级流", "无限流", "权谋", "甜宠"]
-        )
-
-        protagonist = st.text_area(
-            "主角设定",
-            height=100,
-            placeholder="例：林凡，表面社畜工具人，实则隐藏大佬，记忆被封印一次，又重生回来……"
-        )
-
-        world_setting = st.text_area(
-            "世界观设定",
-            height=100,
-            placeholder="例：现代都市+隐秘修真界；或 末日废土+时间回溯能力；或 赛博朋克朝堂权谋……"
-        )
-
-        length_choice = st.selectbox(
-            "期望篇幅（决定大纲章数）",
-            ["30 章", "60 章", "100 章", "150 章"]
-        )
+        novel_type = st.selectbox("类型基调", ["克苏鲁/诡秘", "赛博朋克/反乌托邦", "权谋/新古典主义", "硬核科幻", "暗黑仙侠"])
+        
+        core_irony = st.text_area("核心悖论 (Story Irony)", height=100, 
+                                  placeholder="高级设定的核心是悖论。例如：主角必须杀掉他最爱的人才能拯救世界；或者通过毁灭世界来拯救世界。")
+        
+        protagonist = st.text_area("主角的致命缺陷 (Fatal Flaw)", height=100,
+                                   placeholder="不要写优点。写缺点：傲慢、贪婪、懦弱、偏执。这是人物弧光的起点。")
+        
+        length_choice = st.selectbox("结构规划", ["30章 (紧凑悲剧)", "60章 (正剧)", "100章 (史诗)"])
         target_chapters = int(length_choice.split(" ")[0])
 
-        if st.button("🚀 生成完整大纲（含全部章节）", use_container_width=True):
-            if not protagonist or not world_setting:
-                st.warning("请先补全【主角设定】和【世界观设定】")
+        if st.button("🚀 演绎命运推演 (生成深度大纲)", use_container_width=True):
+            if not core_irony:
+                st.warning("高级小说需要一个核心悖论。")
             else:
-                with st.spinner("正在生成从第1章到最后一章的完整大纲……"):
+                with st.spinner("正在推演蝴蝶效应与命运闭环..."):
                     prompt = f"""
-                    请为一部网络小说生成【完整大纲】，要求：
-
-                    【类型】{novel_type}
-                    【核心爽点】{', '.join(shuangdian_tags) if shuangdian_tags else '自由搭配'}
-                    【主角设定】{protagonist}
-                    【世界观设定】{world_setting}
-                    【目标总章节数】约 {target_chapters} 章（允许略有浮动，比如 ±5 章，但必须有明确的起点和终点）
-
-                    输出内容必须包含：
-                    1. 故事总概述（1~2 段），点明主线冲突和终局目标。
-                    2. 世界观与力量/社会体系简要说明。
-                    3. 主要角色列表（主角+重要配角+反派），给出性格标签和核心人设。
-                    4. 故事阶段划分（例如：铺垫期 / 成长期 / 争霸期 / 终章决战），并标注大约涵盖的章节范围。
-                    5. 【最关键】章节目录：
-                       - 从第1章开始，按顺序列出，直到故事真正结束。
-                       - 每一章必须包含：章节号 + 章节名 + 2~4 句的剧情简介。
-                       - 保证主线是连续推进的，中途不要暂停“写到这里就行了”这种话。
-                    6. 在章节目录后，单独列出 3~5 个关键伏笔，并标注它们埋下和回收的章节号。
-
-                    请严格保证章节目录是连续的，从第1章开始，一个不漏地写到最终大结局。
+                    请构建一个极具文学深度和逻辑张力的小说大纲。
+                    
+                    【类型】：{novel_type}
+                    【核心悖论】：{core_irony}
+                    【主角致命缺陷】：{protagonist}
+                    【篇幅】：{target_chapters} 章
+                    
+                    要求：
+                    1. **世界观要有哲学隐喻**：不要为了设定而设定，世界观要映射现实或人性。
+                    2. **反派要有崇高的理想**：反派不能是坏人，必须是“走向极端的理想主义者”。
+                    3. **剧情必须有三次根本性的反转**（False Victory / Dark Night of the Soul）。
+                    4. **输出详细的章节目录**：从第1章到第{target_chapters}章，每一章的标题都要有电影质感（如“沉默的羔羊”、“燃烧的荆棘”），并附带剧情硬核推进点。
+                    
+                    请输出：
+                    - 核心主题隐喻
+                    - 人物关系图谱（包含镜像人物、宿敌）
+                    - 完整章节目录（必须写满，逻辑严密闭环）
                     """
-
-                    outline_full = ask_ai("你是一名严谨的网文大纲策划编辑。", prompt, temperature=1.0)
+                    outline_full = ask_ai("你是一名诺贝尔文学奖级别的构架师。", prompt, temperature=0.9)
                     if outline_full:
                         st.session_state.outline_raw = outline_full
-
-                        # 抽取章节目录
-                        extract_prompt = f"""
-                        以下是一份完整大纲，请你只抽取【章节目录部分】：
-
-                        {outline_full}
-
-                        只输出如下格式的列表（注意不要输出多余解释）：
-                        第1章 章节名 —— 一句话简介
-                        第2章 章节名 —— 一句话简介
-                        ...
-                        （从第一章到最后一章，全部列出）
-                        """
-
-                        chapter_list = ask_ai(
-                            "你是一个编辑助理，负责整理章节目录。",
-                            extract_prompt,
-                            temperature=0.3
-                        )
-                        if chapter_list:
-                            st.session_state.outline_chapter_list = chapter_list
-
-                        # 把目录转成「第x章：简介」结构，便于按章引用
-                        detail_prompt = f"""
-                        请把下面的章节目录，整理成【每一章的简要大纲】字典。
-
-                        {chapter_list}
-
-                        输出格式示例（不要写成代码块）：
-                        第1章：这里写第1章发生什么（2~3 句）
-                        第2章：这里写第2章发生什么（2~3 句）
-                        ...
-                        请完整列出所有章节。
-                        """
-                        chapter_plans_text = ask_ai(
-                            "你是编辑助理，负责生成每一章简要大纲。",
-                            detail_prompt,
-                            temperature=0.5
-                        )
-                        plans = {}
-                        if chapter_plans_text:
-                            for line in chapter_plans_text.splitlines():
-                                line = line.strip()
-                                if not line:
-                                    continue
-                                if line.startswith("第") and "章" in line and "：" in line:
-                                    try:
-                                        left, right = line.split("：", 1)
-                                        num_str = left.replace("第", "").replace("章", "")
-                                        num = int(num_str)
-                                        plans[num] = right.strip()
-                                    except:
-                                        pass
-                        st.session_state.chapter_plans = plans
-                        st.success("✅ 完整大纲已生成，并已解析出章节目录和每章简要大纲。")
+                        
+                        # 自动解析章节列表
+                        extract_prompt = f"从下面大纲中，只提取【章节目录】部分，格式为：第X章 标题 —— 剧情简介。\n{outline_full}"
+                        chapter_list = ask_ai("整理员", extract_prompt, 0.5)
+                        st.session_state.outline_chapter_list = chapter_list
+                        
+                        # 解析成字典
+                        parse_prompt = f"把章节目录转为字典格式：第X章：内容。\n{chapter_list}"
+                        parsed = ask_ai("整理员", parse_prompt, 0.5)
+                        try:
+                            plans = {}
+                            for line in parsed.splitlines():
+                                if "：" in line and "第" in line:
+                                    num = int(line.split("第")[1].split("章")[0])
+                                    content = line.split("：")[1]
+                                    plans[num] = content
+                            st.session_state.chapter_plans = plans
+                        except:
+                            pass
+                        st.success("命运之轮已开始转动。")
 
     with col_right:
-        tabs = st.tabs(["大纲全文", "章节目录（纯表格）", "每章简要大纲 JSON 风格"])
-        with tabs[0]:
-            st.subheader("大纲全文（可人工修改）")
-            st.session_state.outline_raw = st.text_area(
-                "完整大纲：",
-                height=600,
-                value=st.session_state.outline_raw
-            )
-        with tabs[1]:
-            st.subheader("章节目录（仅章节名+一句话简介）")
-            st.text_area(
-                "章节列表",
-                height=600,
-                value=st.session_state.outline_chapter_list
-            )
-        with tabs[2]:
-            st.subheader("每章简要大纲（解析后的结构）")
-            if st.session_state.chapter_plans:
-                preview_lines = []
-                for k in sorted(st.session_state.chapter_plans.keys()):
-                    preview_lines.append(f"第{k}章：{st.session_state.chapter_plans[k]}")
-                st.text_area("章节简要大纲", "\n".join(preview_lines), height=600)
-            else:
-                st.info("还没有可用的章节简要大纲，请先生成完整大纲。")
+        st.subheader("大纲全览")
+        st.text_area("深度大纲", value=st.session_state.outline_raw, height=600)
 
 # ======================================================
-# 2. 章节生成器 —— 分结构写作 + 续写 + 本章亮点分离
+# 2. 沉浸式剧作 —— 像拍电影一样写正文
 # ======================================================
 elif tool.startswith("2"):
-    st.header("2️⃣ 章节生成器：结构化写作 + 续写 + 本章亮点独立")
-
-    if not st.session_state.outline_raw:
-        st.warning("当前没有大纲，请先在【1. 大纲架构师】生成或粘贴大纲。")
-
+    st.header("2️⃣ 沉浸式剧作：拒绝平铺直叙，只要画面感")
+    
     col_left, col_right = st.columns([1, 1])
-
+    
     with col_left:
-        st.subheader("输入区")
-
-        chap_num = st.number_input("章节编号", min_value=1, step=1, value=1)
+        chap_num = st.number_input("Chapter", min_value=1, value=1)
         chap_num = int(chap_num)
+        
+        plan = st.text_area("本场戏梗概 (Scene Goal)", value=st.session_state.chapter_plans.get(chap_num, ""), height=100)
+        
+        # 高级参数控制
+        tone = st.select_slider("叙事冷热度", options=["极寒(零度叙事)", "冷峻(克制)", "常温", "炽热(情绪化)", "癫狂(意识流)"], value="冷峻(克制)")
+        
+        if st.button("🎬 Action! (开机拍摄)", use_container_width=True):
+            with st.spinner("导演正在讲戏，灯光师准备..."):
+                base_prompt = f"""
+                这里是小说第 {chap_num} 章。请开始正文写作。
+                
+                【本章核心任务】：{plan}
+                【叙事基调】：{tone}
+                
+                【必须执行的高级技法】：
+                1. **开篇即悬念**：第一句话必须抓住读者的喉咙。不要写环境描写开场，直接切入动作或异常现象。
+                2. **草蛇灰线**：在对话中埋下至少两个伏笔，不要解释它，留给读者去猜。
+                3. **感官通感**：不要只写视觉。写出气味（如铁锈味、发霉的木头味）、触觉（粘腻、粗糙）和听觉（耳鸣、远处的高频噪音）。
+                4. **动态博弈**：如果有人物对话，必须是“言语的击剑”。A攻击，B格挡并反刺。没有废话。
+                """
+                text = ask_ai("你是一名电影导演兼文学大师。", base_prompt, temperature=1.2)
+                
+                # 亮点提取
+                hl_prompt = f"提取这章里最惊艳的3个细节或金句：\n{text}"
+                hl = ask_ai("书评人", hl_prompt, 0.7)
+                
+                st.session_state.chapter_texts[chap_num] = text
+                st.session_state.chapter_highlights[chap_num] = hl
+                st.success("Cut! 本场戏拍摄完成。")
+                st.session_state.last_checked_chapter = chap_num
 
-        chapter_title = st.text_input("本章标题（可空）", placeholder="例：第1章 重新睁眼的那一天")
-
-        auto_plan = st.session_state.chapter_plans.get(chap_num, "")
-        chapter_plan = st.text_area(
-            "本章大纲（可来自总纲解析，也可自己改写）",
-            height=160,
-            value=auto_plan
-        )
-
-        style = st.selectbox(
-            "本章整体风格",
-            ["紧张压迫", "狗血对线", "轻松搞笑", "沉稳内敛", "文青细腻"]
-        )
-
-        word_target = st.selectbox(
-            "本次写入目标字数（可多次续写叠加）",
-            ["1200字左右", "2000字左右", "3000字左右"]
-        )
-
-        if chap_num not in st.session_state.chapter_texts:
-            st.session_state.chapter_texts[chap_num] = ""
-        if chap_num not in st.session_state.chapter_highlights:
-            st.session_state.chapter_highlights[chap_num] = ""
-
-        # 生成 / 重写本章
-        if st.button("✍️ 结构化生成 / 重写本章（覆盖当前内容）", use_container_width=True):
-            if not chapter_plan.strip():
-                st.warning("请先写一点【本章大纲】（哪怕2句话也行）。")
-            else:
-                with st.spinner("正在按【开场-发展-冲突】结构写本章……"):
-                    base_prompt = f"""
-                    请根据下面的本章大纲，为一部连载小说写出这一章的正文，要求带有清晰的结构：
-
-                    【本章大纲】：
-                    {chapter_plan}
-
-                    【章节信息】：
-                    - 章节编号：第 {chap_num} 章
-                    - 章节标题：{chapter_title or '可根据内容自行拟一个合适标题'}
-                    - 本章风格倾向：{style}
-                    - 单次写作目标：{word_target}（允许略多）
-
-                    写作结构建议（隐形结构，不要在文中标出来）：
-                    1. 开场段（约 1/4 篇幅）：营造气氛，点明本章矛盾的导火索。
-                    2. 发展段（约 1/2 篇幅）：矛盾升级、交流、试探、信息揭示。
-                    3. 冲突&小结尾（约 1/4 篇幅）：出现一个小高潮，或者为下一章留下一个强烈悬念。
-
-                    其它要求：
-                    - 不要写“本章主要讲了……”等元信息。
-                    - 不要写【本章亮点】这类小标题，亮点只通过剧情本身体现。
-                    - 对白要有来有回，避免一句话完事。
-                    """
-
-                    raw_chapter = ask_ai("你是一名职业网文作者，擅长长篇连载。", base_prompt, temperature=1.1)
-
-                    highlight_prompt = f"""
-                    以下是一章正文，请你用编辑的视角，总结出这一章的看点和亮点（不超过 5 条）：
-
-                    {raw_chapter}
-
-                    请按条列方式输出，每条一句话。只输出亮点列表，不要正文。
-                    """
-                    highlight_text = ask_ai("你是负责卖点提炼的责编。", highlight_prompt, temperature=0.6)
-
-                    if raw_chapter:
-                        st.session_state.chapter_texts[chap_num] = raw_chapter
-                        st.session_state.chapter_highlights[chap_num] = highlight_text or ""
-                        st.success("本章正文已生成，亮点摘要已单独提取。")
-                        st.session_state.last_checked_chapter = chap_num
-
-        # 续写本章
-        if st.button("➕ 续写本章（在当前末尾继续写）", use_container_width=True):
-            existing = st.session_state.chapter_texts.get(chap_num, "")
-            if not existing.strip():
-                st.warning("本章目前还没有内容，请先使用【生成/重写本章】。")
-            else:
-                with st.spinner("正在基于当前剧情自然续写……"):
-                    tail = existing[-800:]
-
-                    cont_prompt = f"""
-                    下面是一章小说的已经写好的部分结尾，请你在此基础上自然续写：
-
-                    【已有正文结尾】：
-                    {tail}
-
-                    【作者心中大致的本章方向】：
-                    {chapter_plan}
-
-                    请继续往后写，要求：
-                    1. 语气、文风与前文保持一致。
-                    2. 推进事件，而不是原地空谈。
-                    3. 尝试朝新的小冲突、发现、新信息前进。
-                    4. 本次续写长度大约 {word_target}。
-
-                    请只输出新增部分，不要重复前文。
-                    """
-
-                    new_part = ask_ai("你是接力续写自己作品的作者。", cont_prompt, temperature=1.1)
-                    if new_part:
-                        combined = existing + "\n\n" + new_part
-                        st.session_state.chapter_texts[chap_num] = combined
-                        st.success("续写成功，本章篇幅已增加。")
-                        st.session_state.last_checked_chapter = chap_num
+        if st.button("➕ 蒙太奇续写 (Montage)", use_container_width=True):
+             existing = st.session_state.chapter_texts.get(chap_num, "")
+             if existing:
+                 with st.spinner("正在切换镜头..."):
+                     cont_prompt = f"""
+                     上文结尾：{existing[-600:]}
+                     
+                     请继续进行**蒙太奇式的转场**或推进。
+                     要求：切换视角或场景，保持高密度的信息量。不要解释过渡，直接切入下一个高潮点。
+                     """
+                     new_text = ask_ai("电影剪辑师", cont_prompt, 1.2)
+                     st.session_state.chapter_texts[chap_num] += "\n\n" + new_text
+                     st.success("镜头拼接完成。")
 
     with col_right:
-        st.subheader("输出区")
-
-        curr_text = st.session_state.chapter_texts.get(chap_num, "")
-        new_text = st.text_area(
-            f"第 {chap_num} 章 正文（只包含正文，不含亮点）",
-            height=450,
-            value=curr_text
-        )
-        if new_text != curr_text:
-            st.session_state.chapter_texts[chap_num] = new_text
-
-        st.markdown("**本章亮点 / 看点摘要（不参与正文导出）**")
-        hl = st.session_state.chapter_highlights.get(chap_num, "")
-        st.text_area("自动提炼的亮点（你也可以手动覆写）", height=120, value=hl)
-
-        col_b1, col_b2 = st.columns(2)
-        with col_b1:
-            if st.button("🚚 送去【逻辑质检员】审稿", use_container_width=True):
-                st.session_state.last_checked_chapter = chap_num
-                st.info("已记录当前章节为待检查对象，请切换到【逻辑质检员】页面。")
-        with col_b2:
-            st.download_button(
-                "💾 导出本章纯正文 TXT",
-                data=new_text,
-                file_name=f"chapter_{chap_num}.txt",
-                mime="text/plain",
-                use_container_width=True
-            )
+        st.subheader("成片预览")
+        current = st.session_state.chapter_texts.get(chap_num, "")
+        st.text_area("正文", value=current, height=500)
+        
+        st.info("💡 本章高光时刻：")
+        st.text(st.session_state.chapter_highlights.get(chap_num, ""))
 
 # ======================================================
-# 3. 逻辑质检员 —— 升级为专业审稿员 + 文本对比
+# 3. 残酷审判官 —— 只有最苛刻的批评才能诞生神作
 # ======================================================
 elif tool.startswith("3"):
-    st.header("3️⃣ 逻辑质检员：专业审稿 + 文本对比（不直接覆盖原文）")
-
-    chap_num = st.number_input(
-        "选择要审稿的章节编号",
-        min_value=1,
-        step=1,
-        value=int(st.session_state.last_checked_chapter or 1)
-    )
-    chap_num = int(chap_num)
-
-    original_text = st.session_state.chapter_texts.get(chap_num, "")
-    if not original_text.strip():
-        st.warning("该章节暂无正文，请先在【章节生成器】写点内容。")
-
+    st.header("3️⃣ 残酷审判官：寻找逻辑漏洞与平庸之恶")
+    
+    chap_num = st.number_input("审判章节", value=st.session_state.last_checked_chapter)
+    text = st.session_state.chapter_texts.get(int(chap_num), "")
+    
     col_left, col_right = st.columns([1, 1])
-
     with col_left:
-        st.subheader("输入区")
-
-        text_for_check = st.text_area(
-            "章节正文（审稿用快照，不会自动改原文）",
-            height=350,
-            value=original_text
-        )
-
-        outline_for_check = st.text_area(
-            "故事大纲（用于比对是否跑偏，可粘贴章节简要大纲）",
-            height=150,
-            value=st.session_state.outline_chapter_list or st.session_state.outline_raw[:1000]
-        )
-
-        if st.button("🔍 开始专业逻辑审稿与文风诊断", use_container_width=True):
-            if not text_for_check.strip():
-                st.warning("正文为空，不能审稿。")
-            else:
-                with st.spinner("专业审稿员正在逐条分析……"):
-                    check_prompt = f"""
-                    你是一个资深网络小说编辑，请对下面这一章进行【专业审稿】。
-
-                    【参考大纲 / 章节目录】：
-                    {outline_for_check}
-
-                    【待审稿正文】：
-                    {text_for_check}
-
-                    请输出详细的“编辑审稿报告”，结构如下：
-
-                    一、严重逻辑问题
-                    - 指出是否存在时间线、地点、因果关系、设定自相矛盾等问题。
-                    - 用【原文片段引用】+【问题说明】的形式列出。
-
-                    二、人物行为与OOC
-                    - 分析主角及重要角色在本章的言行，是否符合你从文中推断出的人设。
-                    - 若有OOC（性格跳脱），指出具体句子与修改方向。
-
-                    三、节奏与结构
-                    - 哪些段落明显水、可删减。
-                    - 哪些情节点推进过快、应该补戏。
-                    - 整体结构是否符合“开场-发展-冲突/小收束”的基本节奏。
-
-                    四、AI味检测
-                    - 指出 3~8 个最像AI写出来的句子，说明原因。
-                    - 给出替换建议（可以只改动语气和用词）。
-
-                    五、综合修改建议
-                    - 用项目符号列出，可操作的修改方案，而不是空洞评价。
-                    """
-                    report = ask_ai("你是一名毒舌但负责的专业小说编辑。", check_prompt, temperature=0.8)
-
-                    fix_prompt = f"""
-                    下面是一章小说正文以及对应的编辑审稿报告。
-
-                    【原始正文】：
-                    {text_for_check}
-
-                    【编辑审稿报告】：
-                    {report}
-
-                    请你在【不改动大方向和主要情节】的前提下，
-                    根据审稿意见重写这一章的正文，重点是：
-
-                    1. 修正明显的逻辑硬伤和时间/因果矛盾。
-                    2. 调整OOC的角色台词或行为，让人物行为更合理。
-                    3. 删掉明显流水账，增强有爽点的戏。
-                    4. 替换掉AI味较重的句子，但保留该句在剧情中的功能。
-
-                    输出：
-                    - 只输出【修改后的正文】，不要重复报告。
-                    """
-                    fixed = ask_ai(
-                        "你是一名根据编辑意见修稿的职业作者。",
-                        fix_prompt,
-                        temperature=1.0
-                    )
-
-                    if report:
-                        st.session_state.logic_report = report
-                    if fixed:
-                        st.session_state.logic_fixed_text = fixed
-
-                    st.session_state.last_checked_chapter = chap_num
-                    st.success("审稿完成，右侧显示审稿报告与修改稿对比。")
+        st.text_area("待审判文本", value=text, height=300)
+        
+        if st.button("🔨 开始残酷审判"):
+            with st.spinner("审判官正在查阅刑法典..."):
+                critique_prompt = f"""
+                请以前所未有的严苛标准，审判这段文本。
+                【原文】：{text}
+                
+                请指出以下问题（越毒舌越好）：
+                1. **逻辑硬伤**：哪里侮辱了读者的智商？
+                2. **陈词滥调**：哪些桥段是别的书写烂了的？
+                3. **人物纸片化**：哪个角色的行为没有动机，只是剧情工具人？
+                4. **垃圾形容词**：列出所有用得烂俗的形容词（如“邪魅一笑”、“倾国倾城”）。
+                
+                并给出【重写指令】：如何把这段文字提升到“殿堂级”水平？
+                """
+                report = ask_ai("你是一名极其挑剔、从不留情面的文学评论家。", critique_prompt, 0.8)
+                
+                rewrite_prompt = f"""
+                原文：{text}
+                审判意见：{report}
+                
+                任务：**重写这一章**。
+                标准：
+                - 只有干货，没有水份。
+                - 每一句话都要有它的功能（要么塑造人物，要么推进剧情，要么营造氛围）。
+                - 使用更加精准、陌生化的动词和名词。
+                """
+                fixed = ask_ai("你是一名海明威风格的作家。", rewrite_prompt, 1.1)
+                
+                st.session_state.logic_report = report
+                st.session_state.logic_fixed_text = fixed
+                st.rerun()
 
     with col_right:
-        st.subheader("输出区：审稿报告 & 正文对比")
-
         if st.session_state.logic_report:
-            with st.expander("📋 专业审稿报告（建议认真读一遍）", expanded=True):
+            with st.expander("☠️ 审判判决书", expanded=True):
                 st.markdown(st.session_state.logic_report)
-
-        if st.session_state.logic_fixed_text:
-            st.markdown("---")
-            st.subheader("📝 文本对比（左：原文 / 右：修改稿）")
-
-            col_o, col_f = st.columns(2)
-            with col_o:
-                st.text_area(
-                    "原始正文（未改动）",
-                    value=original_text,
-                    height=300
-                )
-            with col_f:
-                st.text_area(
-                    "修改稿正文（基于审稿意见优化）",
-                    value=st.session_state.logic_fixed_text,
-                    height=300
-                )
-
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                if st.button("✅ 接受修改稿并覆盖原文", use_container_width=True):
-                    st.session_state.chapter_texts[chap_num] = st.session_state.logic_fixed_text
-                    st.success("已用修改稿覆盖原文，可回到【章节生成器】继续续写后续内容。")
-            with col_btn2:
-                st.download_button(
-                    "💾 下载修改稿正文 TXT",
-                    data=st.session_state.logic_fixed_text,
-                    file_name=f"chapter_{chap_num}_revised.txt",
-                    mime="text/plain",
-                    use_container_width=True
-                )
-        else:
-            st.info("👈 先在左侧点击【开始专业逻辑审稿与文风诊断】。")
+            
+            st.markdown("### 💎 殿堂级重写版")
+            st.text_area("重写结果", value=st.session_state.logic_fixed_text, height=400)
+            
+            if st.button("✅ 采纳重写版"):
+                st.session_state.chapter_texts[int(chap_num)] = st.session_state.logic_fixed_text
+                st.success("已覆盖原稿。")
