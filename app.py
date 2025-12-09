@@ -513,37 +513,45 @@ elif tool.startswith("2"):
                         st.success("续写成功，本章篇幅与复杂度已增加。")
                         st.session_state.last_checked_chapter = chap_num
                         # 续写后不清空审稿结果，让你可以对比“续写前后”的逻辑
+# ... 上面是章节生成器左侧输入区，不动 ...
 
-    with col_right:
-        st.subheader("输出区")
+with col_right:
+    st.subheader("输出区")
 
-        curr_text = st.session_state.chapter_texts.get(chap_num, "")
-        new_text = st.text_area(
-            f"第 {chap_num} 章 正文（只包含正文，不含亮点）",
-            height=450,
-            value=curr_text
+    # ========= 改动开始：章节正文绑定方式 =========
+    text_key = f"chapter_text_{chap_num}"
+
+    if text_key not in st.session_state:
+        # 初始化时，用 chapter_texts 里已有的正文
+        st.session_state[text_key] = st.session_state.chapter_texts.get(chap_num, "")
+
+    st.text_area(
+        f"第 {chap_num} 章 正文（只包含正文，不含亮点）",
+        height=450,
+        key=text_key
+    )
+
+    # 每次都同步回统一存储
+    st.session_state.chapter_texts[chap_num] = st.session_state[text_key]
+    # ========= 改动结束 =========
+
+    st.markdown("**本章亮点 / 看点摘要（不参与正文导出）**")
+    hl = st.session_state.chapter_highlights.get(chap_num, "")
+    st.text_area("自动提炼的亮点（你也可以手动覆写）", height=120, value=hl)
+
+    col_b1, col_b2 = st.columns(2)
+    with col_b1:
+        if st.button("🚚 送去【逻辑质检员】审稿", use_container_width=True):
+            st.session_state.last_checked_chapter = chap_num
+            st.info("已记录当前章节为待检查对象，请切换到【逻辑质检员】页面。")
+    with col_b2:
+        st.download_button(
+            "💾 导出本章纯正文 TXT",
+            data=st.session_state.chapter_texts.get(chap_num, ""),
+            file_name=f"chapter_{chap_num}.txt",
+            mime="text/plain",
+            use_container_width=True
         )
-        if new_text != curr_text:
-            st.session_state.chapter_texts[chap_num] = new_text
-
-        st.markdown("**本章亮点 / 看点摘要（不参与正文导出）**")
-        hl = st.session_state.chapter_highlights.get(chap_num, "")
-        st.text_area("自动提炼的亮点（你也可以手动覆写）", height=120, value=hl)
-
-        col_b1, col_b2 = st.columns(2)
-        with col_b1:
-            if st.button("🚚 送去【逻辑质检员】审稿", use_container_width=True):
-                # 这里只记录章节号，不改正文
-                st.session_state.last_checked_chapter = chap_num
-                st.info("已记录当前章节为待检查对象，请切换到【逻辑质检员】页面。")
-        with col_b2:
-            st.download_button(
-                "💾 导出本章纯正文 TXT",
-                data=new_text,
-                file_name=f"chapter_{chap_num}.txt",
-                mime="text/plain",
-                use_container_width=True
-            )
 
 # ======================================================
 # 3. 逻辑质检员 —— 专业审稿 + 文本对比
@@ -684,3 +692,4 @@ elif tool.startswith("3"):
                     st.session_state.chapter_texts[chap_num] = st.session_state.logic_fixed_text
                     st.success("已用修改稿覆盖原文，可回到【章节生成器】继续续写后续内容。")
          
+
