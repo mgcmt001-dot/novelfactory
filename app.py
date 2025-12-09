@@ -22,11 +22,11 @@ if "chapter_texts" not in st.session_state:
 if "chapter_highlights" not in st.session_state:
     st.session_state.chapter_highlights = {}   # 每一章亮点 {int: str}
 if "last_checked_chapter" not in st.session_state:
-    st.session_state.last_checked_chapter = 1
+    st.session_state.last_checked_chapter = 1  # 最近一次送审/审稿的章节编号
 if "logic_report" not in st.session_state:
-    st.session_state.logic_report = ""
+    st.session_state.logic_report = ""         # 最近一次审稿报告
 if "logic_fixed_text" not in st.session_state:
-    st.session_state.logic_fixed_text = ""
+    st.session_state.logic_fixed_text = ""     # 最近一次修改稿正文
 
 # =============== 项目导出 / 导入函数 ===============
 def export_project() -> str:
@@ -72,6 +72,10 @@ def import_project(json_str: str):
     else:
         st.session_state.last_checked_chapter = 1
 
+    # 导入后暂时清空上一次审稿结果，避免混淆
+    st.session_state.logic_report = ""
+    st.session_state.logic_fixed_text = ""
+
 # =============== 侧边栏：API & 存档/读档 ===============
 with st.sidebar:
     st.title("⚙️ 引擎设置")
@@ -112,7 +116,7 @@ with st.sidebar:
         content = uploaded_file.read().decode("utf-8")
         import_project(content)
         st.success("✅ 项目导入成功！可以在上方 Tab 切换查看内容。")
-        # 不再使用 st.experimental_rerun()，避免云端报错
+        # 不强制 rerun，避免云端报错
 
 # =============== 通用 AI 调用 + 高阶写作规范 ===============
 def ask_ai(system_role: str, user_prompt: str, temperature: float = 1.0, model: str = "deepseek-ai/DeepSeek-V3"):
@@ -357,7 +361,7 @@ elif tool.startswith("2"):
     with col_left:
         st.subheader("输入区")
 
-        chap_num = st.number_input("章节编号", min_value=1, step=1, value=1)
+        chap_num = st.number_input("章节编号", min_value=1, step=1, value=int(st.session_state.last_checked_chapter or 1))
         chap_num = int(chap_num)
 
         chapter_title = st.text_input("本章标题（可空）", placeholder="例：第1章 重新睁眼的那一天")
@@ -463,6 +467,9 @@ elif tool.startswith("2"):
                         st.session_state.chapter_highlights[chap_num] = highlight_text or ""
                         st.success("本章正文已生成，亮点摘要已单独提取。")
                         st.session_state.last_checked_chapter = chap_num
+                        # 生成后清除上一次审稿结果，防止混淆
+                        st.session_state.logic_report = ""
+                        st.session_state.logic_fixed_text = ""
 
         # 续写本章
         if st.button("➕ 高级续写本章（在末尾继续写）", use_container_width=True):
@@ -505,6 +512,7 @@ elif tool.startswith("2"):
                         st.session_state.chapter_texts[chap_num] = combined
                         st.success("续写成功，本章篇幅与复杂度已增加。")
                         st.session_state.last_checked_chapter = chap_num
+                        # 续写后不清空审稿结果，让你可以对比“续写前后”的逻辑
 
     with col_right:
         st.subheader("输出区")
@@ -525,6 +533,7 @@ elif tool.startswith("2"):
         col_b1, col_b2 = st.columns(2)
         with col_b1:
             if st.button("🚚 送去【逻辑质检员】审稿", use_container_width=True):
+                # 这里只记录章节号，不改正文
                 st.session_state.last_checked_chapter = chap_num
                 st.info("已记录当前章节为待检查对象，请切换到【逻辑质检员】页面。")
         with col_b2:
@@ -542,17 +551,18 @@ elif tool.startswith("2"):
 elif tool.startswith("3"):
     st.header("3️⃣ 逻辑质检员：专业审稿 + 文本对比（不直接覆盖原文）")
 
+    # 默认选中上次送审/写作的章节
+    default_chap = int(st.session_state.last_checked_chapter or 1)
     chap_num = st.number_input(
         "选择要审稿的章节编号",
         min_value=1,
         step=1,
-        value=int(st.session_state.last_checked_chapter or 1)
+        value=default_chap
     )
     chap_num = int(chap_num)
 
+    # 从 session 中取该章节最新正文
     original_text = st.session_state.chapter_texts.get(chap_num, "")
-    if not original_text.strip():
-        st.warning("该章节暂无正文，请先在【章节生成器】写点内容。")
 
     col_left, col_right = st.columns([1, 1])
 
@@ -673,13 +683,4 @@ elif tool.startswith("3"):
                 if st.button("✅ 接受修改稿并覆盖原文", use_container_width=True):
                     st.session_state.chapter_texts[chap_num] = st.session_state.logic_fixed_text
                     st.success("已用修改稿覆盖原文，可回到【章节生成器】继续续写后续内容。")
-            with col_btn2:
-                st.download_button(
-                    "💾 下载修改稿正文 TXT",
-                    data=st.session_state.logic_fixed_text,
-                    file_name=f"chapter_{chap_num}_revised.txt",
-                    mime="text/plain",
-                    use_container_width=True
-                )
-        else:
-            st.info("👈 先在左侧点击【开始专业逻辑审稿与文风诊断】。")
+         
