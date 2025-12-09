@@ -92,7 +92,8 @@ if tool.startswith("1"):
             ["玄幻", "都市", "校园", "仙侠", "科幻", "灵异", "历史", "女频·古言", "女频·现言", "男频·热血"]
         )
 
-       爽点 = st.multiselect(
+        # 修正了这里的缩进问题
+        shuang_dian = st.multiselect(
             "爽点（多选）",
             ["重生", "穿越", "虐渣", "复仇", "打脸", "金手指", "马甲大佬", "升级流", "无限流", "权谋", "甜宠"]
         )
@@ -124,7 +125,7 @@ if tool.startswith("1"):
                     请为一部网络小说生成【完整大纲】，要求：
 
                     【类型】{novel_type}
-                    【核心爽点】{', '.join(爽点) if 爽点 else '自由搭配'}
+                    【核心爽点】{', '.join(shuang_dian) if shuang_dian else '自由搭配'}
                     【主角设定】{protagonist}
                     【世界观设定】{world_setting}
                     【目标总章节数】约 {target_chapters} 章（允许略有浮动，比如 ±5 章，但必须有明确的起点和终点）
@@ -177,7 +178,7 @@ if tool.startswith("1"):
                         请完整列出所有章节。
                         """
                         chapter_plans_text = ask_ai("你是编辑助理，负责生成每一章简要大纲。", detail_prompt, temperature=0.5)
-                        # 简单解析成 dict（这里用非常粗暴的方式：按行拆 + 找“第x章：”）
+                        # 简单解析成 dict
                         plans = {}
                         if chapter_plans_text:
                             for line in chapter_plans_text.splitlines():
