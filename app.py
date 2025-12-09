@@ -1,5 +1,7 @@
 import streamlit as st
 from openai import OpenAI
+import json
+from typing import Dict, Any
 
 # =============== Streamlit 基础配置 ===============
 st.set_page_config(
@@ -10,7 +12,6 @@ st.set_page_config(
 
 # =============== Session State 初始化 ===============
 if "outline_raw" not in st.session_state:
-    
     st.session_state.outline_raw = ""          # 原始大纲文本（含说明）
 if "outline_chapter_list" not in st.session_state:
     st.session_state.outline_chapter_list = "" # 仅章节目录部分
@@ -26,9 +27,8 @@ if "logic_report" not in st.session_state:
     st.session_state.logic_report = ""
 if "logic_fixed_text" not in st.session_state:
     st.session_state.logic_fixed_text = ""
-import json
-from typing import Dict, Any
 
+# =============== 项目导出 / 导入函数 ===============
 def export_project() -> str:
     """
     把当前项目（大纲 + 所有章节 + 亮点）打包成 JSON 字符串。
@@ -71,52 +71,8 @@ def import_project(json_str: str):
         st.session_state.last_checked_chapter = min(st.session_state.chapter_texts.keys())
     else:
         st.session_state.last_checked_chapter = 1
-        import json
-from typing import Dict, Any
 
-def export_project() -> str:
-    """
-    把当前项目（大纲 + 所有章节 + 亮点）打包成 JSON 字符串。
-    注意：chapter_plans 和 chapter_texts 用字符串 key，方便序列化。
-    """
-    data: Dict[str, Any] = {
-        "outline_raw": st.session_state.outline_raw,
-        "outline_chapter_list": st.session_state.outline_chapter_list,
-        "chapter_plans": {str(k): v for k, v in st.session_state.chapter_plans.items()},
-        "chapter_texts": {str(k): v for k, v in st.session_state.chapter_texts.items()},
-        "chapter_highlights": {str(k): v for k, v in st.session_state.chapter_highlights.items()},
-    }
-    return json.dumps(data, ensure_ascii=False, indent=2)
-
-
-def import_project(json_str: str):
-    """
-    从 JSON 字符串恢复项目数据到 session_state。
-    """
-    try:
-        data = json.loads(json_str)
-    except Exception as e:
-        st.error(f"导入失败：JSON 解析错误 - {e}")
-        return
-
-    st.session_state.outline_raw = data.get("outline_raw", "")
-    st.session_state.outline_chapter_list = data.get("outline_chapter_list", "")
-
-    chapter_plans_raw = data.get("chapter_plans", {})
-    chapter_texts_raw = data.get("chapter_texts", {})
-    chapter_highlights_raw = data.get("chapter_highlights", {})
-
-    # 把 key 转回 int
-    st.session_state.chapter_plans = {int(k): v for k, v in chapter_plans_raw.items()}
-    st.session_state.chapter_texts = {int(k): v for k, v in chapter_texts_raw.items()}
-    st.session_state.chapter_highlights = {int(k): v for k, v in chapter_highlights_raw.items()}
-
-    # 恢复后，把当前检查章节设为最小章节号（或者 1）
-    if st.session_state.chapter_texts:
-        st.session_state.last_checked_chapter = min(st.session_state.chapter_texts.keys())
-    else:
-        st.session_state.last_checked_chapter = 1
-# =============== 侧边栏：API & 说明 ===============
+# =============== 侧边栏：API & 存档/读档 ===============
 with st.sidebar:
     st.title("⚙️ 引擎设置")
     api_key = st.text_input("SiliconFlow API Key", type="password")
@@ -132,10 +88,11 @@ with st.sidebar:
         "2. 【章节生成器】：按章写正文，可多次续写\n"
         "3. 【逻辑质检员】：专业审稿 + 文本对比\n"
     )
+
     st.markdown("---")
     st.subheader("💾 项目存档 / 读档")
 
-    # 导出按钮
+    # 导出当前项目
     project_json = export_project()
     st.download_button(
         "⬇️ 导出当前项目为 JSON",
@@ -145,7 +102,7 @@ with st.sidebar:
         help="包含大纲 + 每章正文 + 每章亮点。请妥善保存到本地。"
     )
 
-    # 导入上传
+    # 导入项目
     uploaded_file = st.file_uploader(
         "⬆️ 导入之前的项目 JSON",
         type=["json"],
@@ -154,8 +111,8 @@ with st.sidebar:
     if uploaded_file is not None:
         content = uploaded_file.read().decode("utf-8")
         import_project(content)
-        st.success("✅ 项目导入成功！可以在主界面继续写。")
-        st.experimental_rerun()
+        st.success("✅ 项目导入成功！可以在上方 Tab 切换查看内容。")
+        # 不再使用 st.experimental_rerun()，避免云端报错
 
 # =============== 通用 AI 调用 + 高阶写作规范 ===============
 def ask_ai(system_role: str, user_prompt: str, temperature: float = 1.0, model: str = "deepseek-ai/DeepSeek-V3"):
@@ -726,4 +683,3 @@ elif tool.startswith("3"):
                 )
         else:
             st.info("👈 先在左侧点击【开始专业逻辑审稿与文风诊断】。")
-
