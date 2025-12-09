@@ -641,4 +641,73 @@ elif tool.startswith("3"):
                     下面是一章小说正文以及对应的编辑审稿报告。
 
                     【原始正文】：
-           
+                    {text_for_check}
+
+                    【编辑审稿报告】：
+                    {report}
+
+                    请你在【不改动大方向和主要情节】的前提下，
+                    根据审稿意见重写这一章的正文，重点是：
+
+                    1. 修正明显的逻辑硬伤和时间/因果矛盾。
+                    2. 调整OOC的角色台词或行为，让人物行为更合理。
+                    3. 删掉明显流水账，增强有爽点的戏。
+                    4. 替换掉AI味较重的句子，但保留该句在剧情中的功能。
+
+                    输出：
+                    - 只输出【修改后的正文】，不要重复报告。
+                    """
+                    fixed = ask_ai(
+                        "你是一名根据编辑意见修稿的职业作者。",
+                        fix_prompt,
+                        temperature=1.0
+                    )
+
+                    if report:
+                        st.session_state.logic_report = report
+                    if fixed:
+                        st.session_state.logic_fixed_text = fixed
+
+                    st.session_state.last_checked_chapter = chap_num
+                    st.success("审稿完成，右侧显示审稿报告与修改稿对比。")
+
+    with col_right:
+        st.subheader("输出区：审稿报告 & 正文对比")
+
+        if st.session_state.logic_report:
+            with st.expander("📋 专业审稿报告（建议认真读一遍）", expanded=True):
+                st.markdown(st.session_state.logic_report)
+
+        if st.session_state.logic_fixed_text:
+            st.markdown("---")
+            st.subheader("📝 文本对比（左：原文 / 右：修改稿）")
+
+            col_o, col_f = st.columns(2)
+            with col_o:
+                st.text_area(
+                    "原始正文（未改动）",
+                    value=original_text,
+                    height=300
+                )
+            with col_f:
+                st.text_area(
+                    "修改稿正文（基于审稿意见优化）",
+                    value=st.session_state.logic_fixed_text,
+                    height=300
+                )
+
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("✅ 接受修改稿并覆盖原文", use_container_width=True):
+                    st.session_state.chapter_texts[chap_num] = st.session_state.logic_fixed_text
+                    st.success("已用修改稿覆盖原文，可回到【章节生成器】继续续写后续内容。")
+            with col_btn2:
+                st.download_button(
+                    "💾 下载修改稿正文 TXT",
+                    data=st.session_state.logic_fixed_text,
+                    file_name=f"chapter_{chap_num}_revised.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+        else:
+            st.info("👈 先在左侧点击【开始专业逻辑审稿与文风诊断】。")
