@@ -4,7 +4,7 @@ import json
 
 # =============== 基础配置 ===============
 st.set_page_config(
-    page_title="DeepNovel 工业版·稳定版",
+    page_title="DeepNovel 工业版·最终版",
     layout="wide",
     page_icon="📚"
 )
@@ -14,9 +14,9 @@ def init_state():
     defaults = {
         "outline_raw": "",
         "outline_chapter_list": "",
-        "chapter_plans": {},          # {int: str}
+        "chapter_plans": {},          # {int: str}（预留，如果后面想做精细每章大纲）
         "chapter_texts": {},          # {int: str}
-        "chapter_highlights": {},     # {int: str}
+        "chapter_highlights": {},     # {int: str}（目前没强用）
         "last_checked_chapter": 1,
         "logic_report": "",
         "logic_fixed_text": "",
@@ -79,7 +79,7 @@ with st.sidebar:
     st.info(
         "推荐流程：\n"
         "1. 大纲架构师：生成完整大纲\n"
-        "2. 章节生成器：按章写正文\n"
+        "2. 章节生成器：按章写正文 / 续写\n"
         "3. 逻辑质检员：审稿 + 修改\n"
     )
 
@@ -229,9 +229,6 @@ if tool.startswith("1"):
 elif tool.startswith("2"):
     st.header("2️⃣ 章节生成器")
 
-    if not st.session_state.outline_raw:
-        st.warning("当前没有大纲，可以先去【大纲架构师】生成一个。")
-
     left, right = st.columns([1, 1])
 
     with left:
@@ -245,14 +242,37 @@ elif tool.startswith("2"):
         )
         chap_num = int(chap_num)
 
-        # 当前章节已有正文
-        current_text = st.session_state.chapter_texts.get(chap_num, "")
-
         chapter_title = st.text_input("本章标题（可空）")
+
+        # ===== 本章大纲：从章节目录中自动带入对应行 =====
+        def get_default_plan_from_outline(chap: int) -> str:
+            """
+            从 outline_chapter_list 中，抓取「第X章」对应的那一行，
+            作为默认的本章大纲。
+            """
+            outline = st.session_state.outline_chapter_list or ""
+            lines = outline.splitlines()
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                # 以“第X章”开头
+                if line.startswith(f"第{chap}章"):
+                    return line
+            return ""
+
+        plan_key = f"chapter_plan_{chap_num}"
+        if plan_key not in st.session_state:
+            # 第一次访问该章节时，用大纲目录对应行作为默认值
+            st.session_state[plan_key] = get_default_plan_from_outline(chap_num)
+
         chapter_plan = st.text_area(
-            "本章大纲（可写几句概要）",
-            height=120
+            "本章大纲（默认带入章节目录中对应一行，可自行修改）",
+            height=120,
+            value=st.session_state[plan_key]
         )
+        # 同步回去，保持你修改后的版本
+        st.session_state[plan_key] = chapter_plan
 
         style = st.selectbox(
             "本章整体风格",
@@ -262,6 +282,10 @@ elif tool.startswith("2"):
             "单次写入目标字数",
             ["1200字左右", "2000字左右", "3000字左右"]
         )
+
+        # 确保当前章节在字典里
+        if chap_num not in st.session_state.chapter_texts:
+            st.session_state.chapter_texts[chap_num] = ""
 
         # 生成 / 重写本章（覆盖当前）
         if st.button("✍️ 生成 / 重写本章（覆盖当前）", use_container_width=True):
@@ -328,9 +352,9 @@ elif tool.startswith("2"):
                         st.success("续写已完成，可在右侧查看完整正文。")
 
     with right:
-        st.subheader("输出区：第 {} 章".format(chap_num))
+        st.subheader(f"输出区：第 {chap_num} 章")
 
-        # 直接用当前 session 里的正文作为 value，编辑即覆盖
+        # 用当前 session 里的正文作为 value，编辑即覆盖
         text_value = st.text_area(
             "章节正文（可手动修改）",
             height=450,
