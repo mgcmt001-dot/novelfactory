@@ -4,7 +4,7 @@ import json
 
 # =============== 基础配置 ===============
 st.set_page_config(
-    page_title="DeepNovel 写作工厂（大纲 + 正文）",
+    page_title="DeepNovel 写作工厂（记忆库版）",
     layout="wide",
     page_icon="📚"
 )
@@ -14,18 +14,27 @@ def init_state():
     defaults = {
         "outline_raw": "",              # 完整大纲
         "outline_chapter_list": "",     # 章节目录（第1章 xxx —— 简介）
-        "chapter_plans": {},            # {int: str} 可选：每章细纲
+        "chapter_plans": {},            # {int: str} 各章细纲（可选）
         "chapter_texts": {},            # {int: str} 各章正文
         "chapter_highlights": {},       # {int: str} 各章亮点
-        "last_chapter": 1,              # 最近写的章节号
+        "last_chapter": 1,              # 最近一次写作的章节编号
+        # --- 剧情记忆库 ---
+        "story_memory": {
+            "chapter_summaries": {},    # {int: str} 每章摘要
+            "global_summary": ""        # 全局剧情/设定摘要
+        }
     }
     for k, v in defaults.items():
         if k not in st.session_state:
-            st.session_state[k] = v
+            # dict 需要深拷贝，否则引用同一个对象
+            if isinstance(v, dict):
+                st.session_state[k] = json.loads(json.dumps(v, ensure_ascii=False))
+            else:
+                st.session_state[k] = v
 
 init_state()
 
-# =============== 导出 / 导入函数 ===============
+# =============== 导出 / 导入函数（包含记忆库） ===============
 def export_project() -> str:
     data = {
         "outline_raw": st.session_state.outline_raw,
@@ -33,6 +42,10 @@ def export_project() -> str:
         "chapter_plans": {str(k): v for k, v in st.session_state.chapter_plans.items()},
         "chapter_texts": {str(k): v for k, v in st.session_state.chapter_texts.items()},
         "chapter_highlights": {str(k): v for k, v in st.session_state.chapter_highlights.items()},
+        "story_memory": {
+            "chapter_summaries": {str(k): v for k, v in st.session_state.story_memory.get("chapter_summaries", {}).items()},
+            "global_summary": st.session_state.story_memory.get("global_summary", "")
+        }
     }
     return json.dumps(data, ensure_ascii=False, indent=2)
 
@@ -49,10 +62,19 @@ def import_project(json_str: str):
     cp = data.get("chapter_plans", {})
     ct = data.get("chapter_texts", {})
     ch = data.get("chapter_highlights", {})
+    sm = data.get("story_memory", {})
 
     st.session_state.chapter_plans = {int(k): v for k, v in cp.items()}
     st.session_state.chapter_texts = {int(k): v for k, v in ct.items()}
     st.session_state.chapter_highlights = {int(k): v for k, v in ch.items()}
+
+    # 记忆库
+    chapter_summaries = {int(k): v for k, v in sm.get("chapter_summaries", {}).items()}
+    global_summary = sm.get("global_summary", "")
+    st.session_state.story_memory = {
+        "chapter_summaries": chapter_summaries,
+        "global_summary": global_summary
+    }
 
     if st.session_state.chapter_texts:
         st.session_state.last_chapter = max(st.session_state.chapter_texts.keys())
@@ -72,7 +94,8 @@ with st.sidebar:
     st.info(
         "推荐流程：\n"
         "1. 大纲架构师：生成整本书大纲\n"
-        "2. 章节写作工坊：按章写正文 + 续写 + 亮点\n"
+        "2. 章节写作工坊：按章写正文\n"
+        "3. 记忆库自动记录剧情，后续章节更连贯"
     )
 
     st.markdown("---")
@@ -80,9 +103,9 @@ with st.sidebar:
 
     proj_json = export_project()
     st.download_button(
-        "⬇️ 导出当前项目 JSON",
+        "⬇️ 导出当前项目 JSON（含剧情记忆）",
         data=proj_json,
-        file_name="novel_project.json",
+        file_name="novel_project_with_memory.json",
         mime="application/json",
     )
 
@@ -132,19 +155,71 @@ def parse_word_target(label: str):
 def rough_char_count(text: str) -> int:
     return len(text.replace("\n", "").replace(" ", ""))
 
+# =============== 剧情记忆库相关函数 ===============
+
+def auto_summary_for_chapter(chap_num: int, chapter_text: str) -> str:
+    """
+    自动生成某一章的剧情摘要，用于记忆库。
+    """
+    prompt = f"""
+    你是一名网文主编，请为下面这一章正文生成一份【剧情摘要】，用于后续章节写作时参考。
+
+    【正文内容】：
+    {chapter_text}
+
+    摘要要求：
+    1. 字数在 200~400 字之间。
+    2. 只写已经发生的剧情，不要剧透未来。
+    3. 说明这一章：
+       - 推进了哪条主线或支线？
+       - 人物关系有哪些变化？
+       - 有哪些关键伏笔或悬念？
+    4. 用简洁的段落写清楚，不要列表。
+
+    只输出摘要内容本身。
+    """
+    summary = ask_ai("资深网文主编", prompt, temperature=0.6)
+    return summary or ""
+
+def build_memory_context(current_chap_num: int, max_recent: int = 3, max_chars: int = 1800) -> str:
+    """
+    构造【剧情记忆库】文本，用于塞进 Prompt。
+    包含：全局摘要（如果有） + 最近几章的摘要。
+    """
+    memory = st.session_state.story_memory
+    chapter_summaries = memory.get("chapter_summaries", {})
+    global_summary = memory.get("global_summary", "").strip()
+
+    parts = []
+
+    if global_summary:
+        parts.append("【全局剧情/设定摘要】\n" + global_summary)
+
+    # 最近几章摘要：从 current_chap_num-3 到 current_chap_num-1
+    recent_lines = []
+    for offset in range(max_recent, 0, -1):
+        chap = current_chap_num - offset
+        if chap >= 1 and chap in chapter_summaries:
+            recent_lines.append(f"第{chap}章 摘要：\n{chapter_summaries[chap]}")
+    if recent_lines:
+        parts.append("【最近几章剧情回顾】\n" + "\n\n".join(recent_lines))
+
+    full = "\n\n".join(parts)
+    return full[:max_chars] if full else ""
+
 # =============== 顶部导航 ===============
 tool = st.radio(
     "选择工序 / Tool",
-    ["1. 大纲架构师", "2. 章节写作工坊"],
+    ["1. 大纲架构师", "2. 章节写作工坊", "3. 剧情记忆库面板"],
     horizontal=True
 )
 st.markdown("---")
 
 # ======================================================
-# 1. 大纲架构师 —— 修复章节数问题 + 支持自定义章节数
+# 1. 大纲架构师（沿用上一版：支持自定义章节数）
 # ======================================================
 if tool.startswith("1"):
-    st.header("1️⃣ 大纲架构师 · 修正版")
+    st.header("1️⃣ 大纲架构师 · 修正版（支持自定义章节数）")
 
     left, right = st.columns([1.1, 0.9])
 
@@ -239,24 +314,19 @@ if tool.startswith("1"):
                     【世界观设定】：
                     {world_setting}
 
-                    请输出一份【完整可执行大纲】，内容结构严格包括：
+                    请输出一份【完整可执行大纲】：
+                    - 故事总概述
+                    - 世界观 & 规则
+                    - 主要角色阵容
+                    - 阶段划分（含章节范围）
+                    - 完整章节目录
+                    - 长期伏笔与回收
 
-                    一、故事总概述（1~2 段）
-                    二、世界观 & 力量/规则体系
-                    三、主要角色阵容（主角/配角/宿敌）
-                    四、故事阶段划分（包含章节范围）
-                    五、完整章节目录（最关键部分）
-                      - 必须按照如下格式，从第1章连续写到第 {target_chapters} 章，中间不得缺号、不得合并章节：
-                        第1章 章节名 —— 剧情简介（事件级别：小事件/中事件/大事件）
-                        第2章 章节名 —— 剧情简介（事件级别：...）
-                        ...
-                        第{target_chapters}章 章节名 —— 剧情简介（事件级别：...）
-                      - 每一章都要有自己的编号和一句话简介，不能跳过某些章节不写。
-                    六、长期伏笔与回收（列出 3~8 条，含埋下/回收章节号）
-
-                    着重注意：
-                    - 目录部分务必保证章节号连续：第1章、第2章、…、第{target_chapters}章。
-                    - 不要出现“3-5章”这种合并写法，也不要写“中间略”。
+                    其中【章节目录】部分要求：
+                    - 必须从第1章连续写到第{target_chapters}章。
+                    - 每章格式：
+                      第X章 章节名 —— 一句话简介（事件级别：小事件/中事件/大事件）
+                    - 中间不能跳号，不得合并成“第3-5章”这种写法。
                     """
                     outline_full = ask_ai(
                         "你是一名极其严格且专业的网文大纲策划编辑。",
@@ -266,7 +336,6 @@ if tool.startswith("1"):
                     if outline_full:
                         st.session_state.outline_raw = outline_full
 
-                        # 抽取章节目录：要求保留完整连续章节
                         extract_prompt = f"""
                         从下面大纲中，只抽取【章节目录部分】，并保证章节号从第1章连续到第{target_chapters}章：
 
@@ -288,7 +357,7 @@ if tool.startswith("1"):
                         st.success("✅ 大纲生成完成，章节目录已解析。右侧可查看。")
 
     with right:
-        tabs = st.tabs(["大纲全文", "章节目录（供章节页引用）"])
+        tabs = st.tabs(["大纲全文", "章节目录"])
         with tabs[0]:
             st.subheader("大纲全文（可手动精修）")
             st.session_state.outline_raw = st.text_area(
@@ -305,10 +374,10 @@ if tool.startswith("1"):
             )
 
 # ======================================================
-# 2. 章节写作工坊 —— 保持原先的写作能力
+# 2. 章节写作工坊 —— 集成剧情记忆库
 # ======================================================
 elif tool.startswith("2"):
-    st.header("2️⃣ 章节写作工坊 · 正文+续写+亮点")
+    st.header("2️⃣ 章节写作工坊 · 记忆加持版")
 
     left, right = st.columns([1.1, 0.9])
 
@@ -323,7 +392,6 @@ elif tool.startswith("2"):
         )
         chap_num = int(chap_num)
 
-        # 从章节目录中抓取第X章那一行
         def get_outline_line_for_chapter(chap: int) -> str:
             outline = st.session_state.outline_chapter_list or ""
             for line in outline.splitlines():
@@ -336,7 +404,7 @@ elif tool.startswith("2"):
 
         outline_line = get_outline_line_for_chapter(chap_num)
 
-        # ===== AI 生成章节标题 =====
+        # 自动标题
         auto_title = ""
         if outline_line:
             title_prompt = f"""
@@ -346,8 +414,8 @@ elif tool.startswith("2"):
 
             要求：
             - 不要带“第X章”这几个字，只要后半部分标题。
-            - 避免太空泛的词（例如：开始、变化、抉择等），尽量具体。
-            - 字数 6~14 字之间。
+            - 避免太空泛的词，尽量具体。
+            - 字数 6~14 字。
             只输出标题本身。
             """
             auto_title = ask_ai(
@@ -361,7 +429,7 @@ elif tool.startswith("2"):
             value=auto_title if auto_title else ""
         )
 
-        # ===== 本章大纲 =====
+        # 本章大纲
         plan_key = f"chapter_plan_{chap_num}"
 
         def build_default_plan(chap: int) -> str:
@@ -401,11 +469,16 @@ elif tool.startswith("2"):
         if chap_num not in st.session_state.chapter_highlights:
             st.session_state.chapter_highlights[chap_num] = ""
 
-        # ===== 封装：追加续写 =====
+        # ===== 封装：追加续写（带记忆库） =====
         def ai_continue_chapter(existing: str, extra_min: int, extra_max: int) -> str:
             tail = existing[-1200:] if existing else ""
+            memory_block = build_memory_context(chap_num)
+
             cont_prompt = f"""
-            下面是一章小说正文的【已写部分】（只展示结尾片段），请你在此基础上自然续写，视为同一章的后半部分：
+            下面是一章小说正文的【已写部分结尾】和【剧情记忆库】。请你在此基础上自然续写，视为同一章的后半部分。
+
+            【剧情记忆库（必须严格遵守，不得自相矛盾）】：
+            {memory_block or "（当前记忆库为空，你需要尽量保持与已给正文的风格和设定一致。）"}
 
             【已写正文结尾】：
             {tail}
@@ -431,21 +504,25 @@ elif tool.startswith("2"):
             只输出【新增的续写正文】部分，不要重复前文。
             """
             return ask_ai(
-                "你是在延续自己作品的作者，非常在意逻辑连续和伏笔回收，也会注意续写字数。",
+                "你是在延续自己作品的作者，非常在意逻辑连续、世界观自洽和伏笔回收。",
                 cont_prompt,
                 temperature=1.05
             )
 
         # ===== 生成 / 重写本章 =====
-        if st.button("✍️ 高质量生成 / 重写本章（自动追字数）", use_container_width=True):
+        if st.button("✍️ 高质量生成 / 重写本章（自动追字数 + 记录记忆）", use_container_width=True):
             if not chapter_plan.strip():
                 st.warning("请先写一点【本章大纲】。")
             else:
                 with st.spinner("正在根据大纲写这一章（并自动追字数）……"):
                     full_outline_for_ref = st.session_state.outline_raw[:2500]
+                    memory_block = build_memory_context(chap_num)
 
                     gen_prompt = f"""
                     你要写的是一部长篇网络小说中的【第 {chap_num} 章】。
+
+                    【剧情记忆库（必须严格遵守）】：
+                    {memory_block or "（当前记忆库为空，视为本书开局，但仍要保证前后逻辑自洽。）"}
 
                     【全书大纲节选（供你把握整体方向，不必逐字跟随）】：
                     {full_outline_for_ref}
@@ -492,6 +569,10 @@ elif tool.startswith("2"):
                     st.session_state.chapter_texts[chap_num] = combined
                     st.session_state.last_chapter = chap_num
 
+                    # ==== 自动生成剧情摘要，写入记忆库 ====
+                    chap_summary = auto_summary_for_chapter(chap_num, combined)
+                    st.session_state.story_memory["chapter_summaries"][chap_num] = chap_summary
+
                     # 提炼本章亮点
                     hl_prompt = f"""
                     下面是一章小说正文，请你用编辑视角提炼本章的【看点亮点】，用于写推文和单章导语：
@@ -513,10 +594,10 @@ elif tool.startswith("2"):
                     st.session_state.chapter_highlights[chap_num] = highlights or ""
 
                     final_len = rough_char_count(combined)
-                    st.success(f"✅ 本章正文已生成（当前估算字数：约 {final_len} 字），亮点摘要已提炼。右侧可查看和微调。")
+                    st.success(f"✅ 本章正文已生成（估算字数：约 {final_len} 字），剧情摘要已写入记忆库，亮点已提炼。右侧可查看和微调。")
 
         # ===== 手动追加续写 =====
-        if st.button("➕ 在现有基础上增加一轮高质量续写", use_container_width=True):
+        if st.button("➕ 在现有基础上增加一轮高质量续写（带记忆）", use_container_width=True):
             base = st.session_state.chapter_texts.get(chap_num, "")
             if not base.strip():
                 st.warning("本章目前还没有正文，请先生成或手写一点内容。")
@@ -527,6 +608,11 @@ elif tool.startswith("2"):
                     st.session_state.chapter_texts[chap_num] = combined
                     st.session_state.last_chapter = chap_num
 
+                    # 更新本章摘要
+                    chap_summary = auto_summary_for_chapter(chap_num, combined)
+                    st.session_state.story_memory["chapter_summaries"][chap_num] = chap_summary
+
+                    # 更新亮点
                     hl_prompt2 = f"""
                     下面是一整章小说正文，请你重新提炼本章的【看点亮点】：
 
@@ -544,7 +630,7 @@ elif tool.startswith("2"):
                     st.session_state.chapter_highlights[chap_num] = highlights2 or st.session_state.chapter_highlights.get(chap_num, "")
 
                     final_len = rough_char_count(combined)
-                    st.success(f"✅ 续写已完成（当前估算字数：约 {final_len} 字），本章篇幅与层次已增加。")
+                    st.success(f"✅ 续写已完成（估算字数：约 {final_len} 字），剧情摘要和亮点已更新。")
 
     with right:
         st.subheader(f"第 {chap_num} 章 · 正文与亮点")
@@ -552,7 +638,7 @@ elif tool.startswith("2"):
         curr_text = st.session_state.chapter_texts.get(chap_num, "")
         new_text = st.text_area(
             "章节正文（可自由编辑，生成/续写也会更新这里）",
-            height=520,
+            height=460,
             value=curr_text
         )
         st.session_state.chapter_texts[chap_num] = new_text
@@ -563,15 +649,107 @@ elif tool.startswith("2"):
         st.markdown("**本章亮点 / 看点摘要（可用来写推文、导语）**")
         hl_text = st.text_area(
             "自动提炼的亮点（可手工修改，不影响正文）",
-            height=120,
+            height=100,
             value=st.session_state.chapter_highlights.get(chap_num, "")
         )
         st.session_state.chapter_highlights[chap_num] = hl_text
+
+        # 显示/编辑本章剧情摘要（来自记忆库）
+        st.markdown("**本章剧情摘要（记忆库条目，可修改）**")
+        curr_summary = st.session_state.story_memory["chapter_summaries"].get(chap_num, "")
+        new_summary = st.text_area(
+            "剧情摘要（强烈建议保持精简准确，用于后续章节逻辑参考）",
+            height=140,
+            value=curr_summary
+        )
+        st.session_state.story_memory["chapter_summaries"][chap_num] = new_summary
 
         st.download_button(
             "💾 导出本章正文 TXT",
             data=new_text,
             file_name=f"chapter_{chap_num}.txt",
             mime="text/plain",
+            use_container_width=True
+        )
+
+# ======================================================
+# 3. 剧情记忆库面板 —— 查看 & 手改全局摘要
+# ======================================================
+elif tool.startswith("3"):
+    st.header("3️⃣ 剧情记忆库 · 总览与维护")
+
+    memory = st.session_state.story_memory
+    chapter_summaries = memory.get("chapter_summaries", {})
+    global_summary = memory.get("global_summary", "")
+
+    colA, colB = st.columns([1, 1])
+
+    with colA:
+        st.subheader("📌 全局剧情/设定摘要（喂给后续所有章节看的）")
+        st.caption("建议你不定期手工调整，让它始终概括到当前进度的“真相”。")
+        new_global = st.text_area(
+            "全局摘要（例如：世界观、主线进度、主要势力关系等）",
+            height=300,
+            value=global_summary
+        )
+        st.session_state.story_memory["global_summary"] = new_global
+
+        if st.button("🧠 让 AI 帮我根据已写章节自动生成全局摘要", use_container_width=True):
+            if not st.session_state.chapter_texts:
+                st.warning("目前还没有任何章节正文，没法生成全局摘要。")
+            else:
+                with st.spinner("正在根据已写章节生成全局摘要……"):
+                    # 把所有已有章节正文简单拼起来截断
+                    all_text = ""
+                    for chap in sorted(st.session_state.chapter_texts.keys()):
+                        all_text += f"【第{chap}章】\n"
+                        all_text += st.session_state.chapter_texts[chap] + "\n\n"
+                    all_text = all_text[:8000]
+
+                    prompt = f"""
+                    你是网文主编，请根据下面这些章节的正文，为整本书当前进度生成一份【全局剧情/设定摘要】：
+
+                    {all_text}
+
+                    要求：
+                    1. 字数控制在 400~800 字。
+                    2. 概括：世界观、主要势力、主角现状、已公开的重要秘密、主要矛盾走向。
+                    3. 只总结到当前进度，不要猜测未来。
+                    4. 用给“后续章节写作”看的口吻，方便作者和模型快速回忆。
+
+                    只输出摘要内容本身。
+                    """
+                    gs = ask_ai("资深网文主编", prompt, 0.7)
+                    st.session_state.story_memory["global_summary"] = gs or ""
+                    st.success("✅ 全局摘要已生成并写入记忆库。")
+
+    with colB:
+        st.subheader("📚 按章节查看剧情摘要")
+        if not chapter_summaries:
+            st.info("目前还没有任何章节的剧情摘要。可以在章节写作工坊生成章节后自动生成，或者手动补写。")
+        else:
+            # 按章节号排序展示
+            for chap in sorted(chapter_summaries.keys()):
+                with st.expander(f"第 {chap} 章 摘要"):
+                    txt = st.text_area(
+                        f"第{chap}章 摘要编辑框",
+                        height=150,
+                        value=chapter_summaries[chap],
+                        key=f"summary_edit_{chap}"
+                    )
+                    st.session_state.story_memory["chapter_summaries"][chap] = txt
+
+    # 底部导出记忆库
+    st.markdown("---")
+    if st.button("📤 导出剧情记忆库 JSON（只包含摘要，不含正文）"):
+        mem_export = {
+            "chapter_summaries": {str(k): v for k, v in st.session_state.story_memory.get("chapter_summaries", {}).items()},
+            "global_summary": st.session_state.story_memory.get("global_summary", "")
+        }
+        st.download_button(
+            "下载剧情记忆库 JSON",
+            data=json.dumps(mem_export, ensure_ascii=False, indent=2),
+            file_name="story_memory.json",
+            mime="application/json",
             use_container_width=True
         )
